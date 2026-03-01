@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Priority List</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f7;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 16px;
+      color: #1d1d1f;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 32px;
+      letter-spacing: -0.5px;
+    }
+
+    .add-form {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+      max-width: 520px;
+      margin-bottom: 24px;
+    }
+
+    .add-form input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1.5px solid #d1d1d6;
+      border-radius: 10px;
+      font-size: 15px;
+      outline: none;
+      background: #fff;
+      transition: border-color 0.15s;
+      -webkit-appearance: none;
+    }
+
+    .add-form input:focus {
+      border-color: #0071e3;
+    }
+
+    .add-form button {
+      padding: 10px 18px;
+      background: #0071e3;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+      -webkit-appearance: none;
+    }
+
+    .add-form button:hover { background: #0077ed; }
+    .add-form button:active { background: #006edb; }
+
+    #list {
+      width: 100%;
+      max-width: 520px;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #fff;
+      border: 1.5px solid #e5e5ea;
+      border-radius: 12px;
+      padding: 12px 14px;
+      cursor: grab;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: box-shadow 0.15s, opacity 0.15s, border-color 0.15s;
+      touch-action: none;
+    }
+
+    .item:active { cursor: grabbing; }
+
+    .item.dragging {
+      opacity: 0.45;
+      border-color: #0071e3;
+    }
+
+    .item.drag-over {
+      box-shadow: 0 0 0 2px #0071e3;
+    }
+
+    .handle {
+      color: #aeaeb2;
+      font-size: 18px;
+      line-height: 1;
+      flex-shrink: 0;
+      cursor: grab;
+    }
+
+    .item-text {
+      flex: 1;
+      font-size: 15px;
+      line-height: 1.4;
+      word-break: break-word;
+    }
+
+    .delete-btn {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      color: #aeaeb2;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+      -webkit-appearance: none;
+    }
+
+    .delete-btn:hover { color: #ff3b30; background: #fff2f2; }
+
+    .empty {
+      text-align: center;
+      color: #aeaeb2;
+      font-size: 15px;
+      padding: 40px 0;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Priority List</h1>
+
+<div class="add-form">
+  <input type="text" id="new-item" placeholder="Add something…" autocomplete="off">
+  <button onclick="addItem()">Add</button>
+</div>
+
+<ul id="list"></ul>
+
+<script>
+  // ── Storage (Safari-safe) ──────────────────────────────────────────────────
+  var STORAGE_KEY = 'prio_list_v1';
+
+  function loadItems() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return [];
+      var parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveItems(items) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+    } catch (e) {
+      // Safari private mode may block writes — fail silently
+    }
+  }
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  var items = loadItems();
+
+  // ── Drag state ────────────────────────────────────────────────────────────
+  var dragSrcIdx = null;
+  var touchDragItem = null;
+  var touchPlaceholder = null;
+  var touchOffsetY = 0;
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  function render() {
+    var list = document.getElementById('list');
+    list.innerHTML = '';
+
+    if (items.length === 0) {
+      var empty = document.createElement('li');
+      empty.className = 'empty';
+      empty.textContent = 'No items yet. Add something above.';
+      list.appendChild(empty);
+      return;
+    }
+
+    items.forEach(function(text, idx) {
+      var li = document.createElement('li');
+      li.className = 'item';
+      li.draggable = true;
+      li.dataset.idx = idx;
+
+      li.innerHTML =
+        '<span class="handle" aria-hidden="true">&#9776;</span>' +
+        '<span class="item-text">' + escapeHtml(text) + '</span>' +
+        '<button class="delete-btn" title="Delete" onclick="deleteItem(' + idx + ')">&#x2715;</button>';
+
+      // Mouse drag events
+      li.addEventListener('dragstart', onDragStart);
+      li.addEventListener('dragover',  onDragOver);
+      li.addEventListener('drop',      onDrop);
+      li.addEventListener('dragend',   onDragEnd);
+
+      // Touch drag events
+      li.addEventListener('touchstart', onTouchStart, { passive: false });
+      li.addEventListener('touchmove',  onTouchMove,  { passive: false });
+      li.addEventListener('touchend',   onTouchEnd,   { passive: false });
+
+      list.appendChild(li);
+    });
+  }
+
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Add / Delete ──────────────────────────────────────────────────────────
+  function addItem() {
+    var input = document.getElementById('new-item');
+    var text = input.value.trim();
+    if (!text) return;
+    items.push(text);
+    saveItems(items);
+    render();
+    input.value = '';
+    input.focus();
+  }
+
+  function deleteItem(idx) {
+    items.splice(idx, 1);
+    saveItems(items);
+    render();
+  }
+
+  document.getElementById('new-item').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') addItem();
+  });
+
+  // ── Mouse Drag & Drop ─────────────────────────────────────────────────────
+  function onDragStart(e) {
+    dragSrcIdx = parseInt(this.dataset.idx, 10);
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    // Required for Safari to trigger drag
+    e.dataTransfer.setData('text/plain', dragSrcIdx);
+  }
+
+  function onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    document.querySelectorAll('.item').forEach(function(el) {
+      el.classList.remove('drag-over');
+    });
+    this.classList.add('drag-over');
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    var targetIdx = parseInt(this.dataset.idx, 10);
+    if (dragSrcIdx === null || dragSrcIdx === targetIdx) return;
+    var moved = items.splice(dragSrcIdx, 1)[0];
+    items.splice(targetIdx, 0, moved);
+    saveItems(items);
+    render();
+  }
+
+  function onDragEnd() {
+    dragSrcIdx = null;
+    document.querySelectorAll('.item').forEach(function(el) {
+      el.classList.remove('dragging', 'drag-over');
+    });
+  }
+
+  // ── Touch Drag & Drop (mobile / Safari iPad) ──────────────────────────────
+  function onTouchStart(e) {
+    if (e.touches.length !== 1) return;
+    var touch = e.touches[0];
+    var li = this;
+
+    dragSrcIdx = parseInt(li.dataset.idx, 10);
+
+    // Clone the element as a floating ghost
+    var rect = li.getBoundingClientRect();
+    touchOffsetY = touch.clientY - rect.top;
+
+    touchDragItem = li.cloneNode(true);
+    touchDragItem.style.cssText =
+      'position:fixed;left:' + rect.left + 'px;top:' + rect.top + 'px;' +
+      'width:' + rect.width + 'px;opacity:0.8;z-index:9999;pointer-events:none;' +
+      'box-shadow:0 8px 24px rgba(0,0,0,0.15);border-color:#0071e3;';
+    document.body.appendChild(touchDragItem);
+
+    li.classList.add('dragging');
+  }
+
+  function onTouchMove(e) {
+    if (!touchDragItem) return;
+    e.preventDefault();
+    var touch = e.touches[0];
+    touchDragItem.style.top = (touch.clientY - touchOffsetY) + 'px';
+
+    // Find which list item we're hovering over
+    touchDragItem.style.display = 'none';
+    var elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    touchDragItem.style.display = '';
+
+    document.querySelectorAll('.item').forEach(function(el) {
+      el.classList.remove('drag-over');
+    });
+
+    var hovered = elementBelow && elementBelow.closest('.item');
+    if (hovered) hovered.classList.add('drag-over');
+  }
+
+  function onTouchEnd(e) {
+    if (!touchDragItem) return;
+    var touch = e.changedTouches[0];
+
+    touchDragItem.style.display = 'none';
+    var elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+    touchDragItem.style.display = '';
+
+    document.body.removeChild(touchDragItem);
+    touchDragItem = null;
+
+    var hovered = elementBelow && elementBelow.closest('.item');
+    if (hovered) {
+      var targetIdx = parseInt(hovered.dataset.idx, 10);
+      if (dragSrcIdx !== null && dragSrcIdx !== targetIdx) {
+        var moved = items.splice(dragSrcIdx, 1)[0];
+        items.splice(targetIdx, 0, moved);
+        saveItems(items);
+      }
+    }
+
+    dragSrcIdx = null;
+    render();
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  render();
+</script>
+</body>
+</html>
