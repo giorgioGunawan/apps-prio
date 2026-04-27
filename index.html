@@ -122,17 +122,22 @@
       font-size: 12px;
       font-family: inherit;
       line-height: 1;
-      padding: 4px 7px;
-      transition: all 0.15s;
+      /* fixed height so empty/filled never differ */
+      height: 22px;
+      display: flex;
+      align-items: center;
+      padding: 0 7px;
+      transition: background 0.15s, color 0.15s;
       -webkit-appearance: none;
       white-space: nowrap;
+      flex-shrink: 0;
     }
 
-    /* no date set — nearly invisible, just discoverable */
+    /* no date — just a faint + */
     .date-btn.empty {
       background: none;
       color: #d1d1d6;
-      letter-spacing: 0.2px;
+      padding: 0 5px;
     }
     .date-btn.empty:hover  { background: #f2f2f7; color: #aeaeb2; }
     .date-btn.empty:active { background: #e5e5ea; }
@@ -376,7 +381,7 @@
         dateBtn.textContent = MONTHS[mo.m - 1] + " '" + String(mo.y).slice(-2);
       } else {
         dateBtn.className = 'date-btn empty';
-        dateBtn.textContent = '+ date';
+        dateBtn.textContent = '+';
       }
       dateBtn.addEventListener('click', function(e) {
         e.stopPropagation();
