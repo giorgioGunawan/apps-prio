@@ -109,6 +109,92 @@
       word-break: break-word;
     }
 
+    /* ── Date badge ───────────────────────────────────────────────────────── */
+    .date-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .date-btn {
+      border: none;
+      cursor: pointer;
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: inherit;
+      line-height: 1;
+      padding: 4px 7px;
+      transition: all 0.15s;
+      -webkit-appearance: none;
+      white-space: nowrap;
+    }
+
+    /* no date set — nearly invisible, just discoverable */
+    .date-btn.empty {
+      background: none;
+      color: #d1d1d6;
+      letter-spacing: 0.2px;
+    }
+    .date-btn.empty:hover  { background: #f2f2f7; color: #aeaeb2; }
+    .date-btn.empty:active { background: #e5e5ea; }
+
+    /* date is set — small soft pill */
+    .date-btn.filled {
+      background: rgba(0,0,0,0.055);
+      color: #48484a;
+      font-weight: 500;
+    }
+    .date-btn.filled:hover  { background: rgba(0,0,0,0.09); }
+    .date-btn.filled:active { background: rgba(0,0,0,0.12); }
+
+    .date-picker {
+      position: absolute;
+      right: 0;
+      top: 30px;
+      background: #fff;
+      border: 1px solid #e5e5ea;
+      border-radius: 12px;
+      padding: 10px;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.13);
+      z-index: 1001;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 156px;
+    }
+
+    .date-picker-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .date-picker select {
+      flex: 1;
+      padding: 5px 2px;
+      border: 1.5px solid #d1d1d6;
+      border-radius: 7px;
+      font-size: 13px;
+      font-family: inherit;
+      background: #f9f9fb;
+      cursor: pointer;
+      text-align: center;
+      outline: none;
+    }
+    .date-picker select:focus { border-color: #0071e3; }
+
+    .date-picker-clear {
+      background: none;
+      border: none;
+      color: #aeaeb2;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      padding: 2px 0;
+      text-align: center;
+      -webkit-appearance: none;
+      transition: color 0.15s;
+    }
+    .date-picker-clear:hover { color: #ff3b30; }
+
     /* ── Color picker ─────────────────────────────────────────────────────── */
     .color-wrap {
       position: relative;
@@ -200,6 +286,8 @@
     '#fce4ec', '#f3e5f5', '#fff3e0', '#ffebee'
   ];
 
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
   // ── Storage ────────────────────────────────────────────────────────────────
   function loadItems() {
     try {
@@ -234,7 +322,8 @@
 
   // ── State ──────────────────────────────────────────────────────────────────
   var items = loadItems();
-  var openPickerId = null;
+  var openPickerId     = null;
+  var openDatePickerId = null;
 
   // ── Drag state ─────────────────────────────────────────────────────────────
   var dragSrcIdx    = null;
@@ -276,6 +365,25 @@
       text.className = 'item-text';
       text.textContent = item.text;
 
+      // Date badge
+      var dateWrap = document.createElement('div');
+      dateWrap.className = 'date-wrap';
+
+      var dateBtn = document.createElement('button');
+      var mo = item.month;
+      if (mo) {
+        dateBtn.className = 'date-btn filled';
+        dateBtn.textContent = MONTHS[mo.m - 1] + " '" + String(mo.y).slice(-2);
+      } else {
+        dateBtn.className = 'date-btn empty';
+        dateBtn.textContent = '+ date';
+      }
+      dateBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        toggleDatePicker(item.id, dateWrap, item.month);
+      });
+      dateWrap.appendChild(dateBtn);
+
       // Color dot
       var wrap = document.createElement('div');
       wrap.className = 'color-wrap';
@@ -302,6 +410,7 @@
 
       li.appendChild(handle);
       li.appendChild(text);
+      li.appendChild(dateWrap);
       li.appendChild(wrap);
       li.appendChild(del);
 
@@ -315,11 +424,94 @@
     });
   }
 
+  // ── Date picker ────────────────────────────────────────────────────────────
+  function toggleDatePicker(id, dateWrap, current) {
+    closePickers();
+    if (openDatePickerId === id) return; // was already open, closePickers shut it
+
+    openDatePickerId = id;
+    var now = new Date();
+    var selM = current ? current.m : now.getMonth() + 1;
+    var selY = current ? current.y : now.getFullYear();
+
+    var picker = document.createElement('div');
+    picker.className = 'date-picker';
+
+    // Month + Year row
+    var row = document.createElement('div');
+    row.className = 'date-picker-row';
+
+    var mSel = document.createElement('select');
+    for (var i = 1; i <= 12; i++) {
+      var opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = MONTHS[i - 1];
+      if (i === selM) opt.selected = true;
+      mSel.appendChild(opt);
+    }
+
+    var ySel = document.createElement('select');
+    var startY = now.getFullYear() - 1;
+    for (var y = startY; y <= startY + 6; y++) {
+      var yOpt = document.createElement('option');
+      yOpt.value = y;
+      yOpt.textContent = "'" + String(y).slice(-2);
+      if (y === selY) yOpt.selected = true;
+      ySel.appendChild(yOpt);
+    }
+
+    function applyDate() {
+      var item = items.filter(function(i) { return i.id === id; })[0];
+      if (!item) return;
+      item.month = { m: parseInt(mSel.value, 10), y: parseInt(ySel.value, 10) };
+      saveItems();
+      render();
+    }
+
+    mSel.addEventListener('change', function(e) { e.stopPropagation(); applyDate(); });
+    ySel.addEventListener('change', function(e) { e.stopPropagation(); applyDate(); });
+    mSel.addEventListener('click',  function(e) { e.stopPropagation(); });
+    ySel.addEventListener('click',  function(e) { e.stopPropagation(); });
+
+    row.appendChild(mSel);
+    row.appendChild(ySel);
+    picker.appendChild(row);
+
+    if (current) {
+      var clearBtn = document.createElement('button');
+      clearBtn.className = 'date-picker-clear';
+      clearBtn.textContent = 'Remove date';
+      clearBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var item = items.filter(function(i) { return i.id === id; })[0];
+        if (item) { item.month = null; saveItems(); }
+        picker.remove();
+        openDatePickerId = null;
+        render();
+      });
+      picker.appendChild(clearBtn);
+    }
+
+    dateWrap.appendChild(picker);
+  }
+
+  function closePickers() {
+    var cp = document.querySelector('.color-picker');
+    if (cp) cp.remove();
+    var dp = document.querySelector('.date-picker');
+    if (dp) dp.remove();
+    // Only null openDatePickerId if it was genuinely open (toggle logic handles this)
+    var wasDate  = openDatePickerId;
+    var wasColor = openPickerId;
+    openPickerId     = null;
+    openDatePickerId = null;
+    return { color: wasColor, date: wasDate };
+  }
+
   // ── Color picker ───────────────────────────────────────────────────────────
   function togglePicker(id, wrap, current) {
-    var existing = document.querySelector('.color-picker');
-    if (existing) existing.remove();
-    if (openPickerId === id) { openPickerId = null; return; }
+    var prev = closePickers();
+    if (prev.color === id) return; // was already open, now closed
 
     openPickerId = id;
     var picker = document.createElement('div');
@@ -332,8 +524,7 @@
       sw.addEventListener('click', function(e) {
         e.stopPropagation();
         setColor(id, color);
-        picker.remove();
-        openPickerId = null;
+        closePickers();
       });
       picker.appendChild(sw);
     });
@@ -341,10 +532,7 @@
     wrap.appendChild(picker);
   }
 
-  document.addEventListener('click', function() {
-    var p = document.querySelector('.color-picker');
-    if (p) { p.remove(); openPickerId = null; }
-  });
+  document.addEventListener('click', function() { closePickers(); });
 
   function setColor(id, color) {
     var item = items.filter(function(i) { return i.id === id; })[0];
@@ -359,7 +547,7 @@
     var input = document.getElementById('new-item');
     var text  = input.value.trim();
     if (!text) return;
-    items.push({ id: uid(), text: text, color: '#ffffff' });
+    items.push({ id: uid(), text: text, color: '#ffffff', month: null });
     saveItems();
     render();
     input.value = '';
